@@ -650,7 +650,57 @@ void activated_cb(void * self, const cec_logical_address logical_address,
    return;
 }
 
+struct module_state {
+    PyObject *error;
+};
+
+#if PY_MAJOR_VERSION >= 3
+#define GETSTATE(m) ((struct module_state*)PyModule_GetState(m))
+#else
+#define GETSTATE(m) (&_state)
+static struct module_state _state;
+#endif
+
+static PyObject *
+error_out(PyObject *m) {
+    struct module_state *st = GETSTATE(m);
+    PyErr_SetString(st->error, "something bad happened");
+    return NULL;
+}
+
+#if PY_MAJOR_VERSION >= 3
+
+static int myextension_traverse(PyObject *m, visitproc visit, void *arg) {
+    Py_VISIT(GETSTATE(m)->error);
+    return 0;
+}
+
+static int myextension_clear(PyObject *m) {
+    Py_CLEAR(GETSTATE(m)->error);
+    return 0;
+}
+
+
+static struct PyModuleDef moduledef = {
+    PyModuleDef_HEAD_INIT,
+    "myextension",
+    NULL,
+    sizeof(struct module_state),
+    CecMethods,
+    NULL,
+    myextension_traverse,
+    myextension_clear,
+    NULL
+};
+
+#define INITERROR return NULL
+#endif
+
+#if PY_MAJOR_VERSION >= 3
+PyMODINIT_FUNC PyInit_cec(void) {
+#else
 PyMODINIT_FUNC initcec(void) {
+#endif
    // Make sure threads are enabled in the python interpreter
    // this also acquires the global interpreter lock
    PyEval_InitThreads();
@@ -695,7 +745,11 @@ PyMODINIT_FUNC initcec(void) {
 
    if( !CEC_adapter ) {
       PyErr_SetString(PyExc_IOError, "Failed to initialize libcec");
+#if PY_MAJOR_VERSION >= 3
+      return NULL;
+#else
       return;
+#endif
    }
 
 #if CEC_LIB_VERSION_MAJOR > 1 || ( CEC_LIB_VERSION_MAJOR == 1 && CEC_LIB_VERSION_MINOR >= 8 )
@@ -705,11 +759,23 @@ PyMODINIT_FUNC initcec(void) {
    // set up python module
    PyTypeObject * dev = DeviceTypeInit(CEC_adapter);
    Device = (PyObject*)dev;
+#if PY_MAJOR_VERSION >= 3
+   if(PyType_Ready(dev) < 0 ) return NULL;
+#else
    if(PyType_Ready(dev) < 0 ) return;
+#endif
 
+#if PY_MAJOR_VERSION >= 3
+   PyObject * m = PyModule_Create(&moduledef);
+#else
    PyObject * m = Py_InitModule("cec", CecMethods);
+#endif
 
+#if PY_MAJOR_VERSION >= 3
+   if( m == NULL ) return m;
+#else
    if( m == NULL ) return;
+#endif
 
    Py_INCREF(dev);
    PyModule_AddObject(m, "Device", (PyObject*)dev);
@@ -748,4 +814,8 @@ PyMODINIT_FUNC initcec(void) {
    // this should help debugging by exposing which version was detected and
    // which adapter detection API was used at compile time
    PyModule_AddIntMacro(m, HAVE_CEC_ADAPTER_DESCRIPTOR);
+
+#if PY_MAJOR_VERSION >= 3
+   return m;
+#endif
 }
