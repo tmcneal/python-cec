@@ -99,7 +99,7 @@ class Device:
    set_audio_input(input)
 
 cec.is_active_source() # not implemented yet
-cec.set_active_source()  # not implemented yet
+cec.set_active_source()
 cec.set_inactive_source()  # not implemented yet
 
 cec.volume_up()
